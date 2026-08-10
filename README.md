@@ -118,6 +118,21 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser.
 
 ---
 
+## 🌐 Live Production Deployment
+
+### Deployed Vercel Project
+This application is configured for zero-config 1-click deployment on **Vercel**:
+
+1. **Import Repository**: Connect your GitHub repository (`https://github.com/Amitabh-Ozymandias/AgentFlow.git`) on [Vercel](https://vercel.com/new).
+2. **Environment Variables**: Add optional environment variables:
+   ```env
+   LLM_PROVIDER=gemini
+   GEMINI_API_KEY=your_gemini_api_key_here
+   HASURA_GRAPHQL_ADMIN_SECRET=nhost-admin-secret
+   ```
+3. **Deploy**: Vercel automatically deploys the frontend and all serverless API endpoints (`/api/actions`, `/api/webhook`, `/api/graphql`, `/api/llm`).
+
+
 ## 🔑 Configuring API Keys
 
 You can configure your LLM API Key (Google Gemini, Groq, or OpenRouter) in two ways:

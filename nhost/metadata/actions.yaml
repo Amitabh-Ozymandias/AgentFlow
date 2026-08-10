@@ -20,5 +20,29 @@ custom_types:
   input_objects: []
   objects:
     - name: TriggerWorkflowRunOutput
+      fields:
+        - name: success
+          type: Boolean!
+        - name: workflowRunId
+          type: String!
+        - name: status
+          type: String!
+        - name: message
+          type: String
     - name: ApproveStepOutput
+      fields:
+        - name: success
+          type: Boolean!
+        - name: runId
+          type: String!
+        - name: stepRunId
+          type: String!
+        - name: status
+          type: String!
+        - name: approvedBy
+          type: String
+        - name: approvedAt
+          type: String
+        - name: message
+          type: String
   scalars: []

@@ -1,5 +1,4 @@
 - table:
-    dataset: default
     schema: public
     name: organizations
   array_relationships:
@@ -41,7 +40,6 @@
               _eq: X-Hasura-User-Id
 
 - table:
-    dataset: default
     schema: public
     name: org_members
   object_relationships:
@@ -69,7 +67,6 @@
             _eq: X-Hasura-Org-Id
 
 - table:
-    dataset: default
     schema: public
     name: workflows
   object_relationships:
@@ -147,7 +144,6 @@
             _eq: X-Hasura-Org-Id
 
 - table:
-    dataset: default
     schema: public
     name: workflow_steps
   object_relationships:
@@ -156,7 +152,6 @@
         foreign_key_constraint_on: workflow_id
 
 - table:
-    dataset: default
     schema: public
     name: workflow_triggers
   object_relationships:
@@ -165,7 +160,6 @@
         foreign_key_constraint_on: workflow_id
 
 - table:
-    dataset: default
     schema: public
     name: workflow_runs
   object_relationships:
@@ -182,7 +176,6 @@
             name: step_runs
 
 - table:
-    dataset: default
     schema: public
     name: step_runs
   object_relationships:

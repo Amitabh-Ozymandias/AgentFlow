@@ -6,6 +6,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.checkWorkflowPermission = checkWorkflowPermission;
 exports.checkQuota = checkQuota;
+exports.checkPrivilegedStepPermission = checkPrivilegedStepPermission;
 function checkWorkflowPermission(ctx, action) {
     if (!ctx.userId || !ctx.orgId) {
         return { allowed: false, reason: 'Unauthenticated or organization context missing' };
@@ -43,4 +44,15 @@ function checkQuota(quotaUsed, quotaAllowed) {
     }
     return { allowed: true };
 }
-//# sourceMappingURL=permissions.js.map
+function checkPrivilegedStepPermission(ctx, stepTypeOrTriggerType) {
+    const privilegedTypes = ['db_write', 'notify', 'webhook'];
+    if (privilegedTypes.includes(stepTypeOrTriggerType)) {
+        if (ctx.role !== 'owner') {
+            return {
+                allowed: false,
+                reason: `Layer 2 Security: Configured privileged step/trigger '${stepTypeOrTriggerType}' requires 'owner' role. Current role: '${ctx.role}'.`,
+            };
+        }
+    }
+    return { allowed: true };
+}

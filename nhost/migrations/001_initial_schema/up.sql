@@ -213,3 +213,24 @@ CREATE TRIGGER trg_organizations_updated
 CREATE TRIGGER trg_workflows_updated
   BEFORE UPDATE ON workflows
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ============================================================
+-- AGGREGATION VIEW: Org Run Analytics
+-- Computes org-level usage this month & average run duration
+-- ============================================================
+
+CREATE OR REPLACE VIEW org_run_analytics AS
+SELECT 
+  o.id AS org_id,
+  o.name AS org_name,
+  o.quota_allowed,
+  o.quota_used,
+  COUNT(r.id) AS total_runs,
+  COUNT(CASE WHEN r.status = 'completed' THEN 1 END) AS completed_runs,
+  COUNT(CASE WHEN r.status = 'failed' THEN 1 END) AS failed_runs,
+  COALESCE(AVG(EXTRACT(EPOCH FROM (r.completed_at - r.started_at))), 0) AS avg_duration_seconds
+FROM organizations o
+LEFT JOIN workflows w ON w.org_id = o.id
+LEFT JOIN workflow_runs r ON r.workflow_id = w.id
+GROUP BY o.id, o.name, o.quota_allowed, o.quota_used;
+

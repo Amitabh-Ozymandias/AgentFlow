@@ -57,3 +57,20 @@ export function checkQuota(quotaUsed: number, quotaAllowed: number): { allowed: 
   }
   return { allowed: true };
 }
+
+export function checkPrivilegedStepPermission(
+  ctx: UserContext,
+  stepTypeOrTriggerType: string
+): { allowed: boolean; reason?: string } {
+  const privilegedTypes = ['db_write', 'notify', 'webhook'];
+  if (privilegedTypes.includes(stepTypeOrTriggerType)) {
+    if (ctx.role !== 'owner') {
+      return {
+        allowed: false,
+        reason: `Layer 2 Security: Configured privileged step/trigger '${stepTypeOrTriggerType}' requires 'owner' role. Current role: '${ctx.role}'.`,
+      };
+    }
+  }
+  return { allowed: true };
+}
+

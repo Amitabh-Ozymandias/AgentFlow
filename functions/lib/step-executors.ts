@@ -32,39 +32,51 @@ export async function executeStep(ctx: StepExecutionContext): Promise<StepExecut
       const promptTemplate = (config.prompt as string) || 'Analyze the following input:';
       const prompt = interpolateTemplate(promptTemplate, combinedContext);
       
-      try {
-        const response = await generateText({
-          prompt,
-          temperature: (config.temperature as number) ?? 0.7,
-          maxTokens: (config.max_tokens as number) ?? 1024,
-        });
+      const maxAttempts = 2;
+      let lastErr: unknown;
 
-        return {
-          status: 'completed',
-          output: {
-            text: response.text,
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          const response = await generateText({
             prompt,
-            model: response.model,
-            provider: response.provider,
-            usage: response.usage,
-          },
-        };
-      } catch (err: unknown) {
-        // Fallback mock text if API key is missing during offline testing
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        if (errorMsg.includes('Missing API key')) {
+            temperature: (config.temperature as number) ?? 0.7,
+            maxTokens: (config.max_tokens as number) ?? 1024,
+          });
+
           return {
             status: 'completed',
             output: {
-              text: `[Mock LLM Output] Generated summary for input: ${JSON.stringify(combinedContext).slice(0, 100)}`,
-              sentiment: 'positive',
-              model: 'mock-llm',
-              note: 'Running in offline/mock mode (add GEMINI_API_KEY for live execution)',
+              text: response.text,
+              prompt,
+              model: response.model,
+              provider: response.provider,
+              usage: response.usage,
+              attempts: attempt,
             },
           };
+        } catch (err: unknown) {
+          lastErr = err;
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          if (errorMsg.includes('Missing API key')) {
+            return {
+              status: 'completed',
+              output: {
+                text: `[Mock LLM Output] Generated summary for input: ${JSON.stringify(combinedContext).slice(0, 100)}`,
+                sentiment: 'positive',
+                model: 'mock-llm',
+                note: 'Running in offline/mock mode (add GEMINI_API_KEY for live execution)',
+                attempts: attempt,
+              },
+            };
+          }
+          if (attempt < maxAttempts) {
+            await new Promise(res => setTimeout(res, 500 * attempt));
+          }
         }
-        return { status: 'failed', output: {}, error: errorMsg };
       }
+
+      const finalErrorMsg = lastErr instanceof Error ? lastErr.message : String(lastErr);
+      return { status: 'failed', output: {}, error: `LLM Call failed after ${maxAttempts} attempts: ${finalErrorMsg}` };
     }
 
     case 'http_request': {
@@ -73,39 +85,58 @@ export async function executeStep(ctx: StepExecutionContext): Promise<StepExecut
       const headers = (config.headers as Record<string, string>) || {};
       const bodyStr = config.body ? interpolateTemplate(String(config.body), combinedContext) : undefined;
 
-      try {
-        const fetchOptions: RequestInit = {
-          method,
-          headers: { 'Content-Type': 'application/json', ...headers },
-        };
-        if (bodyStr && method !== 'GET' && method !== 'HEAD') {
-          fetchOptions.body = bodyStr;
-        }
+      const maxAttempts = 2;
+      let lastResult: StepExecutionResult | null = null;
 
-        const res = await fetch(url, fetchOptions);
-        let resData: unknown;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
-          resData = await res.json();
-        } catch {
-          resData = await res.text();
+          const fetchOptions: RequestInit = {
+            method,
+            headers: { 'Content-Type': 'application/json', ...headers },
+          };
+          if (bodyStr && method !== 'GET' && method !== 'HEAD') {
+            fetchOptions.body = bodyStr;
+          }
+
+          const res = await fetch(url, fetchOptions);
+          let resData: unknown;
+          try {
+            resData = await res.json();
+          } catch {
+            resData = await res.text();
+          }
+
+          if (res.ok) {
+            return {
+              status: 'completed',
+              output: {
+                status_code: res.status,
+                data: resData,
+                url,
+                attempts: attempt,
+              },
+            };
+          }
+
+          lastResult = {
+            status: 'failed',
+            output: { status_code: res.status, url, attempts: attempt },
+            error: `HTTP request failed with status ${res.status} (attempt ${attempt}/${maxAttempts})`,
+          };
+        } catch (err: unknown) {
+          lastResult = {
+            status: 'failed',
+            output: { url, attempts: attempt },
+            error: `HTTP request network error: ${err instanceof Error ? err.message : String(err)} (attempt ${attempt}/${maxAttempts})`,
+          };
         }
 
-        return {
-          status: res.ok ? 'completed' : 'failed',
-          output: {
-            status_code: res.status,
-            data: resData,
-            url,
-          },
-          error: res.ok ? undefined : `HTTP request failed with status ${res.status}`,
-        };
-      } catch (err: unknown) {
-        return {
-          status: 'failed',
-          output: { url },
-          error: err instanceof Error ? err.message : String(err),
-        };
+        if (attempt < maxAttempts) {
+          await new Promise(res => setTimeout(res, 500 * attempt));
+        }
       }
+
+      return lastResult || { status: 'failed', output: { url }, error: 'HTTP request failed' };
     }
 
     case 'conditional_branch': {

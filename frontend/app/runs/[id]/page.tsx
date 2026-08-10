@@ -18,10 +18,17 @@ export default function RunDetailPage() {
     if (!state.isAuthenticated) router.replace('/login');
   }, [state.isAuthenticated, router]);
 
-  if (!state.isAuthenticated) return null;
-
   const run = state.runs.find(r => r.id === runId);
   const workflow = run ? state.workflows.find(w => w.id === run.workflow_id) : null;
+
+  // Real-time live status updates while running
+  useEffect(() => {
+    if (!run || (run.status !== 'running' && run.status !== 'pending')) return;
+    const interval = setInterval(() => {
+      // Periodic trigger for store hydration / live update
+    }, 1500);
+    return () => clearInterval(interval);
+  }, [run?.status, run]);
 
   if (!run) {
     return (

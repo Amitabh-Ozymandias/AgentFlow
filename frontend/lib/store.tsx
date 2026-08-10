@@ -6,7 +6,17 @@
 
 'use client';
 
-import React, { createContext, useContext, useReducer, useCallback, useRef, type ReactNode } from 'react';
+import React, { createContext, useContext, useReducer, useCallback, useRef, useEffect, type ReactNode } from 'react';
+import { hasuraGraphQLFetch } from './nhost';
+import {
+  INSERT_WORKFLOW,
+  UPDATE_WORKFLOW,
+  DELETE_WORKFLOW,
+  INSERT_WORKFLOW_RUN,
+  UPDATE_STEP_RUN,
+  UPDATE_WORKFLOW_RUN_STATUS,
+  INCREMENT_ORG_QUOTA,
+} from './graphql-queries';
 
 // ---- Types matching the PostgreSQL schema ----
 
@@ -558,15 +568,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     };
     workflow.triggers[0].workflow_id = workflow.id;
     dispatch({ type: 'ADD_WORKFLOW', workflow });
+
+    // Persist to Nhost Hasura PostgreSQL DB
+    hasuraGraphQLFetch(INSERT_WORKFLOW, {
+      id: workflow.id,
+      org_id: workflow.org_id,
+      name: workflow.name,
+      description: workflow.description,
+      created_by: workflow.created_by,
+    }).catch(() => {});
+
     return workflow;
   }, []);
 
   const updateWorkflow = useCallback((workflow: Workflow) => {
-    dispatch({ type: 'UPDATE_WORKFLOW', workflow: { ...workflow, updated_at: new Date().toISOString() } });
+    const updated = { ...workflow, updated_at: new Date().toISOString() };
+    dispatch({ type: 'UPDATE_WORKFLOW', workflow: updated });
+
+    // Persist to Nhost Hasura PostgreSQL DB
+    hasuraGraphQLFetch(UPDATE_WORKFLOW, {
+      id: workflow.id,
+      name: workflow.name,
+      description: workflow.description,
+    }).catch(() => {});
   }, []);
 
   const deleteWorkflow = useCallback((workflowId: string) => {
     dispatch({ type: 'DELETE_WORKFLOW', workflowId });
+
+    // Persist deletion to Nhost Hasura PostgreSQL DB
+    hasuraGraphQLFetch(DELETE_WORKFLOW, { id: workflowId }).catch(() => {});
   }, []);
 
   // ---- Execution Engine (client-side simulation) ----

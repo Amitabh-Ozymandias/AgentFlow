@@ -30,17 +30,35 @@ export async function hasuraGraphQLFetch<T>(
   variables: Record<string, unknown> = {},
   headers: Record<string, string> = {}
 ): Promise<{ data?: T; errors?: Array<{ message: string }> }> {
-  const endpoint = getNhostGraphQLUrl();
-  const adminSecret = process.env.NEXT_PUBLIC_HASURA_ADMIN_SECRET || 'nhost-admin-secret';
+  // If running in browser, route requests via /api/graphql server proxy
+  // to avoid exposing any admin credentials or secrets in browser JS bundle
+  const isBrowser = typeof window !== 'undefined';
+  const endpoint = isBrowser ? '/api/graphql' : getNhostGraphQLUrl();
 
   try {
+    const fetchHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...headers,
+    };
+
+    // Forward session user claims from localStorage if present
+    if (isBrowser) {
+      const activeUserStr = localStorage.getItem('agentflow_active_user');
+      const activeOrgId = localStorage.getItem('agentflow_active_org_id');
+      const activeRole = localStorage.getItem('agentflow_active_role');
+      if (activeUserStr) {
+        try {
+          const user = JSON.parse(activeUserStr);
+          if (user?.id) fetchHeaders['x-hasura-user-id'] = user.id;
+        } catch {}
+      }
+      if (activeOrgId) fetchHeaders['x-hasura-org-id'] = activeOrgId;
+      if (activeRole) fetchHeaders['x-hasura-role'] = activeRole;
+    }
+
     const res = await fetch(endpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-hasura-admin-secret': adminSecret,
-        ...headers,
-      },
+      headers: fetchHeaders,
       body: JSON.stringify({ query, variables }),
     });
 

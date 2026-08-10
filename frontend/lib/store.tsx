@@ -9,6 +9,10 @@
 import React, { createContext, useContext, useReducer, useCallback, useRef, useEffect, type ReactNode } from 'react';
 import { hasuraGraphQLFetch } from './nhost';
 import {
+  GET_ORGANIZATIONS,
+  GET_ORG_MEMBERS,
+  GET_WORKFLOWS_BY_ORG,
+  GET_RUNS_BY_ORG,
   INSERT_WORKFLOW,
   UPDATE_WORKFLOW,
   DELETE_WORKFLOW,
@@ -426,10 +430,37 @@ type Action =
   | { type: 'UPDATE_STEP_RUN'; runId: string; stepRun: StepRun }
   | { type: 'INCREMENT_QUOTA'; orgId: string }
   | { type: 'ADD_TOAST'; toast: Toast }
-  | { type: 'REMOVE_TOAST'; toastId: string };
+  | { type: 'REMOVE_TOAST'; toastId: string }
+  | {
+      type: 'HYDRATE_DATA';
+      workflows?: Workflow[];
+      runs?: WorkflowRun[];
+      organizations?: Organization[];
+      orgMembers?: OrgMember[];
+    };
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
+    case 'HYDRATE_DATA': {
+      const nextState = { ...state };
+      if (action.workflows && action.workflows.length > 0) {
+        const existingIds = new Set(action.workflows.map(w => w.id));
+        const keptLocal = state.workflows.filter(w => !existingIds.has(w.id));
+        nextState.workflows = [...action.workflows, ...keptLocal];
+      }
+      if (action.runs && action.runs.length > 0) {
+        const existingRunIds = new Set(action.runs.map(r => r.id));
+        const keptLocalRuns = state.runs.filter(r => !existingRunIds.has(r.id));
+        nextState.runs = [...action.runs, ...keptLocalRuns];
+      }
+      if (action.organizations && action.organizations.length > 0) {
+        nextState.organizations = action.organizations;
+      }
+      if (action.orgMembers && action.orgMembers.length > 0) {
+        nextState.orgMembers = action.orgMembers;
+      }
+      return nextState;
+    }
     case 'LOGIN': {
       const userOrgs = state.orgMembers.filter(m => m.user_id === action.user.id);
       const firstOrgId = userOrgs.length > 0 ? userOrgs[0].org_id : null;
@@ -516,6 +547,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const user = USERS.find(u => u.email === email);
     if (user) {
       dispatch({ type: 'LOGIN', user });
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('agentflow_active_user', JSON.stringify(user));
+      }
       return true;
     }
     return false;
@@ -523,10 +557,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     dispatch({ type: 'LOGOUT' });
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('agentflow_active_user');
+      localStorage.removeItem('agentflow_active_org_id');
+      localStorage.removeItem('agentflow_active_role');
+    }
   }, []);
 
   const switchOrg = useCallback((orgId: string) => {
     dispatch({ type: 'SET_ORG', orgId });
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('agentflow_active_org_id', orgId);
+    }
   }, []);
 
   const getCurrentOrg = useCallback((): Organization | null => {
@@ -539,6 +581,74 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const member = orgMembers.find(m => m.user_id === currentUser.id && m.org_id === currentOrgId);
     return member?.role || null;
   }, []);
+
+  // Restore saved session from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedUserStr = localStorage.getItem('agentflow_active_user');
+      if (savedUserStr) {
+        try {
+          const user = JSON.parse(savedUserStr);
+          if (user && user.id) {
+            dispatch({ type: 'LOGIN', user });
+            const savedOrgId = localStorage.getItem('agentflow_active_org_id');
+            if (savedOrgId) {
+              dispatch({ type: 'SET_ORG', orgId: savedOrgId });
+            }
+          }
+        } catch {}
+      }
+    }
+  }, []);
+
+  // Persist session role and orgId to localStorage when user or org changes
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const role = getCurrentRole();
+      if (role) {
+        localStorage.setItem('agentflow_active_role', role);
+      }
+      if (state.currentOrgId) {
+        localStorage.setItem('agentflow_active_org_id', state.currentOrgId);
+      }
+    }
+  }, [state.currentUser, state.currentOrgId, getCurrentRole]);
+
+  // Hydrate workflows and runs dynamically from Hasura GraphQL backend
+  useEffect(() => {
+    const orgId = state.currentOrgId;
+    if (!orgId) return;
+
+    let isMounted = true;
+    async function hydrateFromGraphQL() {
+      try {
+        const [wfRes, runRes] = await Promise.all([
+          hasuraGraphQLFetch<{ workflows: Workflow[] }>(GET_WORKFLOWS_BY_ORG, { org_id: orgId }),
+          hasuraGraphQLFetch<{ workflow_runs: WorkflowRun[] }>(GET_RUNS_BY_ORG, { org_id: orgId }),
+        ]);
+
+        if (isMounted) {
+          const fetchedWfs = wfRes.data?.workflows;
+          const fetchedRuns = runRes.data?.workflow_runs;
+
+          if ((fetchedWfs && fetchedWfs.length > 0) || (fetchedRuns && fetchedRuns.length > 0)) {
+            dispatch({
+              type: 'HYDRATE_DATA',
+              workflows: fetchedWfs || [],
+              runs: fetchedRuns || [],
+            });
+          }
+        }
+      } catch {
+        // Fall back gracefully to seeded memory state if GraphQL API is unreachable
+      }
+    }
+
+    hydrateFromGraphQL();
+    return () => {
+      isMounted = false;
+    };
+  }, [state.currentOrgId]);
 
   const getOrgMembers = useCallback((orgId: string): OrgMember[] => {
     return stateRef.current.orgMembers.filter(m => m.org_id === orgId);

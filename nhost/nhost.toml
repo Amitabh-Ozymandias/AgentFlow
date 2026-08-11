@@ -1,6 +1,4 @@
-# Nhost Project Configuration
-[provider]
-name = "nhost"
+
 
 [auth]
 version = "v2"

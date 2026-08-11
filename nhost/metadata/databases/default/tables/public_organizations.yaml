@@ -1,0 +1,45 @@
+table:
+  schema: public
+  name: organizations
+
+array_relationships:
+  - name: members
+    using:
+      foreign_key_constraint_on:
+        column: org_id
+        table:
+          schema: public
+          name: org_members
+
+  - name: workflows
+    using:
+      foreign_key_constraint_on:
+        column: org_id
+        table:
+          schema: public
+          name: workflows
+
+select_permissions:
+  - role: owner
+    permission:
+      columns: '*'
+      filter:
+        members:
+          user_id:
+            _eq: X-Hasura-User-Id
+
+  - role: editor
+    permission:
+      columns: '*'
+      filter:
+        members:
+          user_id:
+            _eq: X-Hasura-User-Id
+
+  - role: viewer
+    permission:
+      columns: '*'
+      filter:
+        members:
+          user_id:
+            _eq: X-Hasura-User-Id
